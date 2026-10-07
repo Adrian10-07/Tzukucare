@@ -1,0 +1,5 @@
+PyQt5
+pyaudio
+numpy
+tflite-runtime
+firebase-admin
