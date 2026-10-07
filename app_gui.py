@@ -32,7 +32,7 @@ from PyQt5.QtGui import QFont, QPainter, QColor
 class PixelDogWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setMinimumSize(180, 180)
+        self.setMinimumSize(120, 120)
         self.state = "REPOSO"
         self.frame = 0
         
@@ -251,76 +251,81 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Sistema de Detección Canina - RPi UI")
-        self.setFixedSize(1024, 600)
         
-        self.setStyleSheet("""
-            QMainWindow {
+        # --- DETECCIÓN AUTOMÁTICA DE PANTALLA ---
+        screen = QApplication.primaryScreen().availableGeometry()
+        screen_w = screen.width()
+        screen_h = screen.height()
+
+        # Permitir un tamaño mínimo flexible para pantallas de 800x480 o 1024x600
+        self.setMinimumSize(720, 400)
+        
+        # Si la pantalla es pequeña (menor a 600px de alto), adaptar fuentes
+        is_small_screen = screen_h < 550
+        font_title_size = 12 if is_small_screen else 14
+        font_status_size = 14 if is_small_screen else 18
+
+        self.setStyleSheet(f"""
+            QMainWindow {{
                 background-color: #0F172A;
-            }
-            QFrame#card {
+            }}
+            QFrame#card {{
                 background-color: #1E293B;
                 border-radius: 12px;
                 border: 1px solid #334155;
-            }
-            QLabel {
+            }}
+            QLabel {{
                 color: #F8FAFC;
-            }
-            QTextEdit {
+            }}
+            QTextEdit {{
                 background-color: #020617;
                 color: #F8FAFC;
                 border: 1px solid #1E293B;
                 border-radius: 8px;
                 font-family: 'Segoe UI', Arial, sans-serif;
-                font-size: 14px;
-                padding: 10px;
-            }
+                font-size: {12 if is_small_screen else 14}px;
+                padding: 8px;
+            }}
         """)
 
         main_layout = QHBoxLayout()
-        main_layout.setContentsMargins(15, 15, 15, 15)
-        main_layout.setSpacing(15)
+        main_layout.setContentsMargins(10, 10, 10, 10)
+        main_layout.setSpacing(10)
 
-        # ------------------------------------------
-        # PANEL IZQUIERDO: MONITOR DE ESTADO
-        # ------------------------------------------
+        # Panel Izquierdo (Estado y Perro)
         left_card = QFrame()
         left_card.setObjectName("card")
         left_layout = QVBoxLayout(left_card)
-        left_layout.setContentsMargins(20, 20, 20, 20)
+        left_layout.setContentsMargins(12, 12, 12, 12)
 
-        # Estado Principal
         self.lbl_estado = QLabel("REPOSO")
         self.lbl_estado.setAlignment(Qt.AlignCenter)
-        self.lbl_estado.setFont(QFont("Segoe UI", 18, QFont.Bold))
+        self.lbl_estado.setFont(QFont("Segoe UI", font_status_size, QFont.Bold))
         self.lbl_estado.setStyleSheet("""
             background-color: #10B981;
             color: #FFFFFF;
             border-radius: 8px;
-            padding: 10px;
+            padding: 8px;
         """)
 
-        # Widget Pixel Art
         self.pixel_dog = PixelDogWidget()
 
-        # Clase Detectada (Simple)
         self.lbl_clase = QLabel("Detección: Esperando audio...")
-        self.lbl_clase.setFont(QFont("Segoe UI", 14, QFont.Bold))
+        self.lbl_clase.setFont(QFont("Segoe UI", font_title_size, QFont.Bold))
         self.lbl_clase.setAlignment(Qt.AlignCenter)
 
         left_layout.addWidget(self.lbl_estado)
         left_layout.addWidget(self.pixel_dog, alignment=Qt.AlignCenter)
         left_layout.addWidget(self.lbl_clase)
 
-        # ------------------------------------------
-        # PANEL DERECHO: REGISTRO DE ALERTAS
-        # ------------------------------------------
+        # Panel Derecho (Historial)
         right_card = QFrame()
         right_card.setObjectName("card")
         right_layout = QVBoxLayout(right_card)
-        right_layout.setContentsMargins(20, 20, 20, 20)
+        right_layout.setContentsMargins(12, 12, 12, 12)
 
-        lbl_historial_title = QLabel(" Registro de Eventos y Alertas")
-        lbl_historial_title.setFont(QFont("Segoe UI", 14, QFont.Bold))
+        lbl_historial_title = QLabel(" Registro de Eventos")
+        lbl_historial_title.setFont(QFont("Segoe UI", font_title_size, QFont.Bold))
         
         self.log_txt = QTextEdit()
         self.log_txt.setReadOnly(True)
@@ -328,13 +333,18 @@ class MainWindow(QMainWindow):
         right_layout.addWidget(lbl_historial_title)
         right_layout.addWidget(self.log_txt)
 
-        main_layout.addWidget(left_card, 50)
-        main_layout.addWidget(right_card, 50)
+        main_layout.addWidget(left_card, 45)
+        main_layout.addWidget(right_card, 55)
 
         container = QWidget()
         container.setLayout(main_layout)
         self.setCentralWidget(container)
 
+        # --- MODO DE VISUALIZACIÓN ---
+        # Abre la ventana maximizada ocupando el espacio disponible sin salirse de la pantalla
+        self.showMaximized()
+
+        # Hilo de audio e interconexión
         self.thread = AudioThread()
         self.thread.update_signal.connect(self.actualizar_ui)
         self.thread.start()
