@@ -3,10 +3,7 @@ import numpy as np
 import pyaudio
 
 # Carga ligera de TFLite con respaldo
-try:
-    import tflite_runtime.interpreter as tflite
-except ImportError:
-    import tensorflow.lite as tflite
+import tensorflow.lite as tflite
 
 import yamnet as yamnet_model
 
