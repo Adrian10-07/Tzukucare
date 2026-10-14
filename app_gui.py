@@ -1,6 +1,7 @@
 import sys, time, re
 import numpy as np
 import pyaudio
+from scipy.signal import resample_poly
 import firebase_admin
 from firebase_admin import credentials, messaging, firestore
 import yamnet as yamnet_model
@@ -234,9 +235,22 @@ class AudioThread(QThread):
             except Exception:
                 continue
 
+
+            # 1. Interpretar los bytes recibidos como muestras PCM de 16 bits.
             audio_hd = np.frombuffer(data, dtype=np.int16)
-            audio_16k = audio_hd[::3]
-            audio_array = audio_16k.astype(np.float32) / 32768.0
+
+            # 2. Convertir a float32 y normalizar el audio.
+            audio_float = audio_hd.astype(np.float32) / 32768.0
+
+            # 3. Remuestrear de 48 kHz a 16 kHz con filtrado antialiasing.
+            audio_16k = resample_poly(
+                audio_float,
+                up=1,
+                down=3
+            )
+            # 4. Asegurar el tipo de dato que espera el modelo.
+            audio_array = audio_16k.astype(np.float32)
+
 
             interpreter.set_tensor(inputs[0]['index'], audio_array)
             interpreter.invoke()
