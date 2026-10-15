@@ -1,5 +1,6 @@
 PyQt5
 pyaudio
 numpy
-tflite-runtime
+tensorflow
 firebase-admin
+scipy
