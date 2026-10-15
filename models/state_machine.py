@@ -1,11 +1,22 @@
-
 class DetectionStateMachine:
-    def __init__(self):
+    def __init__(self, umbral_alarma: int = 3):
         self.okgoogle = 0
         self.ladridos_seguidos = 0
         self.ladridos_total_escucha = 0
+        self.umbral_alarma = umbral_alarma
 
-    def update(self, es_ladrido: bool):
+    def set_umbral_alarma(self, nuevo_umbral: int):
+        """Actualiza dinámicamente cuántos ladridos activan la alarma."""
+        self.umbral_alarma = max(1, nuevo_umbral)
+
+    def force_alarm(self) -> str:
+        """Fuerza manualmente el estado de Alarma para emergencias."""
+        self.ladridos_total_escucha = 0
+        self.okgoogle = 0
+        self.ladridos_seguidos = 0
+        return "¡¡ ALARMA ACTIVADA !!"
+
+    def update(self, es_ladrido: bool) -> str:
         """Evalúa las transiciones de estado según la detección de ladridos."""
         estado_texto = "REPOSO"
 
@@ -16,9 +27,8 @@ class DetectionStateMachine:
                 estado_texto = "ESCUCHA ACTIVA"
                 self.ladridos_total_escucha += 1
 
-        if self.ladridos_total_escucha >= 3:
+        if self.ladridos_total_escucha >= self.umbral_alarma:
             estado_texto = "¡¡ ALARMA ACTIVADA !!"
-            # Resetear contadores tras la activación de la alarma
             self.ladridos_total_escucha = 0
             self.okgoogle = 0
             self.ladridos_seguidos = 0

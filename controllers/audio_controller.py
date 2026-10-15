@@ -7,7 +7,6 @@ from models.firebase_service import FirebaseService
 import config
 
 class AudioController(QThread):
-    # Señales enviadas hacia la vista
     update_ui_signal = pyqtSignal(str, str)  # (estado, clase)
     log_signal = pyqtSignal(str)             # (mensaje_log)
 
@@ -17,6 +16,34 @@ class AudioController(QThread):
         self.state_machine = DetectionStateMachine()
         self.firebase = firebase_service
         self.is_running = True
+
+    def trigger_manual_alarm(self):
+        """Dispara inmediatamente la alarma manual de emergencia."""
+        hora = time.strftime("%H:%M:%S")
+        estado_texto = self.state_machine.force_alarm()
+        
+        self.update_ui_signal.emit(estado_texto, "Alarma Manual")
+        self.log_signal.emit(f"[{hora}] 🚨 ALARMA MANUAL ACTIVADA POR USUARIO")
+
+        # 1. Guardar en Firestore
+        success_db, msg_db = self.firebase.save_alert("ACTIVACIÓN MANUAL DE EMERGENCIA")
+        self.log_signal.emit(f"[{hora}] {msg_db}")
+
+        # 2. Enviar Notificación Push FCM
+        success_push, msg_push = self.firebase.send_push_notification("ACTIVACIÓN MANUAL DE EMERGENCIA")
+        self.log_signal.emit(f"[{hora}] {msg_push}")
+
+    def update_configuration(self, ladridos: int, sensibilidad_pct: float):
+        """Actualiza la sensibilidad del clasificador y el umbral de ladridos."""
+        hora = time.strftime("%H:%M:%S")
+        umbral_confianza = sensibilidad_pct / 100.0
+
+        self.state_machine.set_umbral_alarma(ladridos)
+        self.classifier.set_umbral_confianza(umbral_confianza)
+
+        self.log_signal.emit(
+            f"[{hora}] ⚙️ Configuración actualizada: {ladridos} ladridos | Sensibilidad: {sensibilidad_pct:.0f}%"
+        )
 
     def run(self):
         p = pyaudio.PyAudio()
@@ -29,7 +56,7 @@ class AudioController(QThread):
                 break
 
         if input_device_index is None:
-            self.log_signal.emit("Error: No se encontró micrófono disponible.")
+            self.log_signal.emit("❌ Error: No se encontró micrófono disponible.")
             return
 
         try:
@@ -42,7 +69,7 @@ class AudioController(QThread):
                 frames_per_buffer=config.CHUNK_SIZE
             )
         except Exception as e:
-            self.log_signal.emit(f"Error al abrir micrófono: {e}")
+            self.log_signal.emit(f"❌ Error al abrir micrófono: {e}")
             return
 
         while self.is_running:
@@ -51,16 +78,11 @@ class AudioController(QThread):
             except Exception:
                 continue
 
-            # 1. Procesar audio con el Modelo de Inferencia
             top_class, top_score, es_ladrido = self.classifier.process_and_classify(data)
-
-            # 2. Actualizar el Modelo de Estado
             estado_texto = self.state_machine.update(es_ladrido)
 
-            # 3. Notificar a la Vista para actualizar la UI
             self.update_ui_signal.emit(estado_texto, top_class)
 
-            # 4. Manejo de eventos de registro y dispatch de Firebase
             if estado_texto in ["ESCUCHA ACTIVA", "¡¡ ALARMA ACTIVADA !!"]:
                 hora = time.strftime("%H:%M:%S")
 
@@ -70,11 +92,9 @@ class AudioController(QThread):
                 elif estado_texto == "¡¡ ALARMA ACTIVADA !!":
                     self.log_signal.emit(f"[{hora}] ¡¡ ALARMA ACTIVADA !! - Ladridos continuos")
 
-                    # Disparo a Firestore
                     success_db, msg_db = self.firebase.save_alert(top_class)
                     self.log_signal.emit(f"[{hora}] {msg_db}")
 
-                    # Disparo Push FCM
                     success_push, msg_push = self.firebase.send_push_notification(top_class)
                     self.log_signal.emit(f"[{hora}] {msg_push}")
 
