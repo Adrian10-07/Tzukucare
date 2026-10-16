@@ -18,15 +18,16 @@ class FirebaseService:
         except Exception as e:
             print(f"Error al conectar con Firebase: {e}")
 
-    def save_alert(self, clase: str):
+    def save_alert(self, clase: str, tipo: str = "ladrido", mensaje: str = None, nivel: str = "Crítico"):
         """Guarda un registro de alerta en Firestore."""
         if not self.is_connected or not self.db:
             return False, "Firebase no está conectado"
 
         try:
             datos_alerta = {
-                "mensaje": f"Ladridos detectados ({clase})",
-                "nivel": "Crítico",
+                "mensaje": mensaje or f"Ladridos detectados ({clase})",
+                "nivel": nivel,
+                "tipo": tipo,
                 "timestamp": firestore.SERVER_TIMESTAMP
             }
             self.db.collection(config.FIRESTORE_COLLECTION).add(datos_alerta)
@@ -34,7 +35,7 @@ class FirebaseService:
         except Exception as e:
             return False, f"Error en Firestore: {e}"
 
-    def send_push_notification(self, clase: str):
+    def send_push_notification(self, clase: str, titulo: str = None, cuerpo: str = None, tipo: str = "ladrido"):
         """Envía notificación Push a través de FCM."""
         if not self.is_connected:
             return False, "Firebase no está conectado"
@@ -42,9 +43,10 @@ class FirebaseService:
         try:
             mensaje_push = messaging.Message(
                 notification=messaging.Notification(
-                    title="¡TzukuCare Alerta!",
-                    body=f"Se detectaron ladridos continuos ({clase})."
+                    title=titulo or "¡TzukuCare Alerta!",
+                    body=cuerpo or f"Se detectaron ladridos continuos ({clase})."
                 ),
+                data={"tipo": tipo, "clase": clase},
                 android=messaging.AndroidConfig(
                     priority='high',
                     notification=messaging.AndroidNotification(

@@ -1,0 +1,12 @@
+{
+  "ladridos": 5,
+  "sensibilidad": 40,
+  "alcance": "media",
+  "umbral_calibrado_db": null,
+  "alertas_extra": [
+    "disparo",
+    "humo",
+    "sirena",
+    "explosion"
+  ]
+}

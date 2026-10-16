@@ -1,0 +1,6 @@
+PyQt5
+numpy
+scipy
+pyaudio
+firebase-admin
+onnxruntime
