@@ -1,6 +1,6 @@
 {
-  "ladridos": 5,
-  "sensibilidad": 40,
+  "ladridos": 3,
+  "sensibilidad": 20,
   "alcance": "media",
   "umbral_calibrado_db": null,
   "alertas_extra": [

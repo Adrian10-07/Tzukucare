@@ -6,6 +6,7 @@ class FirebaseService:
     def __init__(self):
         self.db = None
         self.is_connected = False
+        self.dispositivo_id = None  # [SINCRONIZACIÓN] lo asigna main.py si la carpeta sincronizacion/ existe
         self._initialize()
 
     def _initialize(self):
@@ -30,6 +31,8 @@ class FirebaseService:
                 "tipo": tipo,
                 "timestamp": firestore.SERVER_TIMESTAMP
             }
+            if self.dispositivo_id:  # [SINCRONIZACIÓN] la app solo muestra las alertas de sus dispositivos
+                datos_alerta["dispositivo_id"] = self.dispositivo_id
             self.db.collection(config.FIRESTORE_COLLECTION).add(datos_alerta)
             return True, "Guardado en Firestore exitoso."
         except Exception as e:
@@ -46,7 +49,7 @@ class FirebaseService:
                     title=titulo or "¡TzukuCare Alerta!",
                     body=cuerpo or f"Se detectaron ladridos continuos ({clase})."
                 ),
-                data={"tipo": tipo, "clase": clase},
+                data={"tipo": tipo, "clase": clase, "dispositivo_id": self.dispositivo_id or ""},
                 android=messaging.AndroidConfig(
                     priority='high',
                     notification=messaging.AndroidNotification(
@@ -54,9 +57,15 @@ class FirebaseService:
                         channel_id='tzukucare_alerts'
                     )
                 ),
-                topic=config.FCM_TOPIC
+                topic=self._topic()
             )
             response = messaging.send(mensaje_push)
             return True, f"Push enviado con éxito: {response}"
         except Exception as e:
             return False, f"Error enviando Push: {e}"
+
+    def _topic(self) -> str:
+        """[SINCRONIZACIÓN] Con dispositivo vinculado, el push va solo a los teléfonos de ese dispositivo."""
+        if self.dispositivo_id:
+            return f"{config.FCM_TOPIC_DISPOSITIVO_PREFIJO}{self.dispositivo_id}"
+        return config.FCM_TOPIC

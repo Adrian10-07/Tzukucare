@@ -1,11 +1,13 @@
+# views/main_window.py
 from PyQt5.QtWidgets import (QMainWindow, QApplication, QLabel, QVBoxLayout,
                              QHBoxLayout, QWidget, QFrame, QPushButton,
                              QSizePolicy, QGraphicsDropShadowEffect)
-from PyQt5.QtCore import Qt, pyqtSignal, QPointF
+from PyQt5.QtCore import Qt, pyqtSignal, QPointF, QTimer
 from PyQt5.QtGui import (QFont, QCursor, QPixmap, QPainter, QColor,
                          QPainterPath, QPen)
 from views.pixel_dog_widget import PixelDogWidget
 from views.config_dialog import ConfigDialog
+from views import alert_styles
 from views import theme
 import config
 
@@ -104,6 +106,14 @@ class MainWindow(QMainWindow):
         # Valores actuales mostrados en el modal de configuración
         self._settings = dict(settings or config.SETTINGS_DEFAULT)
         self._config_dialog = None
+        self.extra_config_tabs = []  # [API TZUKU] funciones que crean pestañas extra del modal
+        # Último estado recibido y alerta extra que se está mostrando (si hay)
+        self._estado = "REPOSO"
+        self._clase = "Esperando audio…"
+        self._alerta = None
+        self._alerta_timer = QTimer(self)
+        self._alerta_timer.setSingleShot(True)
+        self._alerta_timer.timeout.connect(self._hide_extra_alert)
         self._init_ui()
 
     def _init_ui(self):
@@ -196,6 +206,10 @@ class MainWindow(QMainWindow):
         self.lbl_estado_desc = QLabel(DESCRIPCION_ESTADO["REPOSO"])
         self.lbl_estado_desc.setObjectName("muted")
         self.lbl_estado_desc.setAlignment(Qt.AlignCenter)
+        self.lbl_estado_desc.setWordWrap(True)  # las descripciones de alertas extra son más largas
+        # Los textos largos de las alertas extra no deben ensanchar la tarjeta
+        for lbl in (self.lbl_estado, self.lbl_estado_desc):
+            lbl.setSizePolicy(QSizePolicy.Ignored, lbl.sizePolicy().verticalPolicy())
         self.lbl_estado_desc.setFont(theme.font(9 if small else 11))
 
         self.pixel_dog = PixelDogWidget()
@@ -217,10 +231,10 @@ class MainWindow(QMainWindow):
         self.lbl_clase.setObjectName("sound_value")
         self.lbl_clase.setFont(theme.font(12 if small else 14, QFont.Bold))
         self.lbl_clase.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.lbl_clase.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
 
         info_lay.addWidget(lbl_sonido_cap)
-        info_lay.addStretch()
-        info_lay.addWidget(self.lbl_clase)
+        info_lay.addWidget(self.lbl_clase, 1)
 
         lay.addWidget(caption)
         lay.addWidget(self.lbl_estado)
@@ -262,7 +276,7 @@ class MainWindow(QMainWindow):
         self.manual_alarm_signal.emit()
 
     def _on_config_button_clicked(self):
-        dialog = ConfigDialog(self._settings, self)
+        dialog = ConfigDialog(self._settings, self, extra_tabs=self.extra_config_tabs)
         dialog.calibration_requested.connect(self.calibration_requested_signal.emit)
         self._config_dialog = dialog
         try:
@@ -278,14 +292,40 @@ class MainWindow(QMainWindow):
 
     # ---------- Actualización desde el controlador ----------
     def update_status(self, estado: str, clase: str):
+        self._estado, self._clase = estado, clase
+        if self._alerta and estado != "¡¡ ALARMA ACTIVADA !!":
+            return  # la alerta extra sigue en pantalla; la alarma de ladridos tiene prioridad
+        self._alerta = None
+        self._alerta_timer.stop()
+        self.pixel_dog.set_alert(None)
         self.lbl_estado.setText(estado)
         self.lbl_estado_desc.setText(DESCRIPCION_ESTADO.get(estado, ""))
         self._apply_state_style(estado)
         self.pixel_dog.set_state(estado)
         self.lbl_clase.setText(clase)
 
+    def show_extra_alert(self, clave: str):
+        """Muestra una alerta extra (disparos, cristal, etc.) con su color, texto y cachorro."""
+        estilo = alert_styles.ESTILOS_ALERTA.get(clave)
+        if estilo is None or self._estado == "¡¡ ALARMA ACTIVADA !!":
+            return
+        self._alerta = clave
+        self.lbl_estado.setText(estilo["titulo"])
+        self.lbl_estado_desc.setText(estilo["descripcion"])
+        self._apply_colors(estilo["colores"])
+        self.pixel_dog.set_alert(clave)
+        self.lbl_clase.setText(estilo["sonido"])
+        self._alerta_timer.start(alert_styles.DURACION_ALERTA_SEG * 1000)
+
+    def _hide_extra_alert(self):
+        self._alerta = None
+        self.update_status(self._estado, self._clase)
+
     def _apply_state_style(self, estado: str):
-        bg, fg, _, borde = config.ESTILOS_ESTADO.get(estado, config.ESTILOS_ESTADO["REPOSO"])
+        self._apply_colors(config.ESTILOS_ESTADO.get(estado, config.ESTILOS_ESTADO["REPOSO"]))
+
+    def _apply_colors(self, colores):
+        bg, fg, _, borde = colores
         self.lbl_estado.setStyleSheet(
             f"background-color: {bg}; color: {fg}; border-radius: {self._pill_h // 2}px;")
         self.left_card.setStyleSheet(f"QFrame#card {{ border: 2px solid {borde}; }}")

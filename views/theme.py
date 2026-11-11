@@ -1,3 +1,5 @@
+# views/theme.py
+"""Tokens visuales y hojas de estilo compartidas, basadas en la paleta de config.py."""
 import os
 import tempfile
 from PyQt5.QtCore import Qt, QPointF

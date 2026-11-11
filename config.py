@@ -59,6 +59,7 @@ SETTINGS_DEFAULT = {
 
 #TEMAS Y CANALES FIREBASE
 FCM_TOPIC = "alertas_tzukucare"
+FCM_TOPIC_DISPOSITIVO_PREFIJO = "tzukucare_"  # [SINCRONIZACIÓN] tema por dispositivo: tzukucare_<id>
 FIRESTORE_COLLECTION = "alertas_tzukucare"
 
 #PALETA VISUAL

@@ -4,7 +4,7 @@ from scipy.signal import resample_poly
 import csv
 import config
 
-# Motor de inferencia: TFLite (Raspberry Pi) y, si no se puede cargar, ONNX Runtime (p. ej. Windows)
+# Motor de inferencia: TFLite (Raspberry Pi) y, si no se puede cargar, ONNX Runtime
 tflite = None
 ort = None
 try:
@@ -35,13 +35,16 @@ def _leer_clases(class_map_csv):
 
 def nivel_dbfs(audio_float: np.ndarray, sample_rate: int) -> float:
     """Nivel máximo (dBFS) en ventanas cortas. Un ladrido corto no se diluye en el bloque de ~1 s."""
+    # 1. Divide el audio en fragmentos más pequeños (definidos en config.VENTANA_NIVEL_SEG)
     n = max(1, int(sample_rate * config.VENTANA_NIVEL_SEG))
     usable = (len(audio_float) // n) * n
     if usable == 0:
         frames = audio_float.reshape(1, -1)
     else:
         frames = audio_float[:usable].reshape(-1, n)
+    # 2. Calcula el valor RMS (raíz cuadrada de la media de los cuadrados) para cada fragmento
     rms = np.sqrt(np.mean(np.square(frames, dtype=np.float64), axis=1))
+    # 3. Convierte el valor RMS más alto a la escala logarítmica de decibelios (dBFS)
     return float(20.0 * np.log10(max(float(rms.max()), 1e-10)))
 
 
@@ -140,3 +143,6 @@ class AudioClassifier:
                 resultado["alertas"][clave] = (self.yamnet_classes[mejor], float(prediction[mejor]))
 
         return resultado
+
+#Funcionamiento: Si configuras umbral_db en, por ejemplo, -35 dBFS, y el micrófono graba un ruido ambiente suave que mide -48 dBFS, la condición nivel < self.umbral_db se cumple (-48 es menor que -35).
+#El resultado: El código se detiene inmediatamente y devuelve "Silencio". Evita realizar el remuestreo (resample_poly) y se salta por completo la inferencia del modelo de IA (self._infer), ahorrando valioso procesamiento en la Raspberry Pi. Solo si el volumen supera ese umbral, el audio avanza para ver si es un ladrido o una alerta.

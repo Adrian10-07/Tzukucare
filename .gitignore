@@ -1,3 +1,5 @@
 adri/
 firebase_credentials.json
 *.pyc
+yamnet_classification.onnx
+requeriments-windows.txt

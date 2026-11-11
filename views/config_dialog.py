@@ -1,9 +1,11 @@
+# views/config_dialog.py
 from PyQt5.QtWidgets import (QDialog, QLabel, QVBoxLayout, QHBoxLayout, QFrame,
                              QPushButton, QSpinBox, QTabWidget, QWidget, QComboBox,
                              QCheckBox, QGridLayout)
-from PyQt5.QtCore import Qt, pyqtSignal
-from PyQt5.QtGui import QFont, QCursor
-from views import theme
+from PyQt5.QtCore import Qt, pyqtSignal, QSize, QEvent
+from PyQt5.QtGui import QFont, QCursor, QIcon
+from views import theme, alert_styles
+from views.pixel_dog_widget import PixelDogWidget
 import config
 
 
@@ -11,11 +13,13 @@ class ConfigDialog(QDialog):
     """Modal de configuración: ladridos y sensibilidad, alcance de detección y alertas extra."""
     calibration_requested = pyqtSignal()
 
-    def __init__(self, settings: dict, parent=None):
+    def __init__(self, settings: dict, parent=None, extra_tabs=None):
         super().__init__(parent)
+        self._extra_tabs_factories = extra_tabs or []  # [API TZUKU] pestañas de servicios opcionales
+        self._extra_tabs = []
         self.setWindowTitle("Configuración del Dispositivo")
         self.setModal(True)
-        self.setMinimumWidth(520)
+        self.setMinimumWidth(700)
         self._umbral_calibrado = settings.get("umbral_calibrado_db")
         self._init_ui(settings)
 
@@ -37,6 +41,10 @@ class ConfigDialog(QDialog):
         tabs.addTab(self._build_tab_ladridos(settings), "Ladridos")
         tabs.addTab(self._build_tab_alcance(settings), "Alcance")
         tabs.addTab(self._build_tab_alertas(settings), "Otras alertas")
+        for crear in self._extra_tabs_factories:  # [API TZUKU]
+            tab = crear()
+            tabs.addTab(tab, tab.titulo)
+            self._extra_tabs.append(tab)
 
         # Botones
         buttons = QHBoxLayout()
@@ -64,7 +72,12 @@ class ConfigDialog(QDialog):
         layout.addWidget(tabs, 1)
         layout.addLayout(buttons)
 
-    #  Pestaña: Ladridos 
+    def accept(self):
+        for tab in self._extra_tabs:  # [API TZUKU] cada servicio guarda sus propios datos
+            tab.aplicar()
+        super().accept()
+
+    # ---------- Pestaña: Ladridos ----------
     def _build_tab_ladridos(self, settings: dict) -> QWidget:
         page = QWidget()
         v = QVBoxLayout(page)
@@ -91,7 +104,7 @@ class ConfigDialog(QDialog):
         v.addStretch()
         return page
 
-    #  Pestaña: Alcance 
+    # ---------- Pestaña: Alcance ----------
     def _build_tab_alcance(self, settings: dict) -> QWidget:
         page = QWidget()
         v = QVBoxLayout(page)
@@ -178,11 +191,15 @@ class ConfigDialog(QDialog):
         v.setContentsMargins(0, 10, 0, 0)
         v.setSpacing(6)
 
-        lbl = QLabel(f"Elige hasta {config.MAX_ALERTAS_EXTRA} sonidos que también enviarán una alerta a la app.")
+        lbl = QLabel(f"Elige hasta {config.MAX_ALERTAS_EXTRA} sonidos que también enviarán una alerta a la app. "
+                     "Pasa el dedo o el ratón por uno para ver cómo se mostrará.")
         lbl.setFont(theme.font(10))
         lbl.setObjectName("muted")
         lbl.setWordWrap(True)
         v.addWidget(lbl)
+
+        fila = QHBoxLayout()
+        fila.setSpacing(10)
 
         box = QFrame()
         box.setObjectName("field")
@@ -195,13 +212,20 @@ class ConfigDialog(QDialog):
         for i, (clave, (nombre, _, _)) in enumerate(config.ALERTAS_EXTRA.items()):
             chk = QCheckBox(nombre)
             chk.setCursor(QCursor(Qt.PointingHandCursor))
+            chk.setIcon(QIcon(PixelDogWidget.badge_pixmap(clave, 24)))
+            chk.setIconSize(QSize(24, 24))
             chk.setChecked(clave in settings["alertas_extra"])
             if clave == "sirena":
                 chk.setToolTip("YAMNet no distingue la alerta sísmica de otras sirenas (ambulancias, policía).")
             chk.toggled.connect(self._enforce_max_alertas)
+            chk.toggled.connect(lambda _, c=clave: self._preview_alerta(c))
+            chk.setProperty("alerta", clave)
+            chk.installEventFilter(self)
             self.chk_alertas[clave] = chk
             grid.addWidget(chk, i // 2, i % 2)
-        v.addWidget(box)
+        fila.addWidget(box, 1)
+        fila.addWidget(self._build_preview_alerta())
+        v.addLayout(fila)
 
         self.lbl_alertas_count = QLabel()
         self.lbl_alertas_count.setFont(theme.font(9))
@@ -209,7 +233,48 @@ class ConfigDialog(QDialog):
         v.addWidget(self.lbl_alertas_count)
         v.addStretch()
         self._enforce_max_alertas()
+        activas = [k for k in config.ALERTAS_EXTRA if k in settings["alertas_extra"]]
+        self._preview_alerta((activas or list(config.ALERTAS_EXTRA))[0])
         return page
+
+    def _build_preview_alerta(self) -> QFrame:
+        """Vista previa: el cachorro y el título que aparecerán en la pantalla principal."""
+        preview = QFrame()
+        preview.setObjectName("field")
+        preview.setFixedWidth(150)
+        lay = QVBoxLayout(preview)
+        lay.setContentsMargins(10, 10, 10, 10)
+        lay.setSpacing(6)
+
+        self.preview_dog = PixelDogWidget()
+        self.preview_dog.setMinimumSize(110, 110)
+        self.preview_dog.setFixedHeight(110)
+
+        self.preview_titulo = QLabel()
+        self.preview_titulo.setAlignment(Qt.AlignCenter)
+        self.preview_titulo.setFont(theme.font(10, QFont.Black))
+        self.preview_titulo.setWordWrap(True)
+        self.preview_titulo.setFixedHeight(40)
+
+        lay.addWidget(self.preview_dog)
+        lay.addWidget(self.preview_titulo)
+        lay.addStretch()
+        return preview
+
+    def _preview_alerta(self, clave: str):
+        estilo = alert_styles.ESTILOS_ALERTA.get(clave)
+        if estilo is None:
+            return
+        bg, fg, _, _ = estilo["colores"]
+        self.preview_dog.set_alert(clave)
+        self.preview_titulo.setText(estilo["titulo"])
+        self.preview_titulo.setStyleSheet(
+            f"background-color: {bg}; color: {fg}; border-radius: 12px; padding: 2px 6px;")
+
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.Enter and obj.property("alerta"):
+            self._preview_alerta(obj.property("alerta"))
+        return super().eventFilter(obj, event)
 
     def _enforce_max_alertas(self):
         activas = sum(chk.isChecked() for chk in self.chk_alertas.values())

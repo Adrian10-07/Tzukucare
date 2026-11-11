@@ -12,6 +12,8 @@ class AudioController(QThread):
     update_ui_signal = pyqtSignal(str, str)  # (estado, clase)
     log_signal = pyqtSignal(str)             # (mensaje_log)
     calibration_done_signal = pyqtSignal(float)  # nivel máximo medido (dBFS)
+    extra_alert_signal = pyqtSignal(str)     # [ALERTAS UI] clave de la alerta extra enviada
+    api_addon = None  # [API TZUKU] complemento opcional; main.py lo asigna si está configurado
 
     def __init__(self, firebase_worker: FirebaseWorker, settings: dict = None):
         super().__init__()
@@ -80,6 +82,7 @@ class AudioController(QThread):
             nombre, _, nivel = config.ALERTAS_EXTRA[clave]
             clase, score = detectadas[clave]
             self.log_signal.emit(f"[{hora}] 🔔 ALERTA: {nombre} ({clase}, {score:.2f})")
+            self.extra_alert_signal.emit(clave)  # [ALERTAS UI]
             self.firebase_worker.enqueue(
                 clase, tipo=clave, nivel=nivel,
                 mensaje=f"{nombre} detectado ({clase})",
@@ -122,6 +125,9 @@ class AudioController(QThread):
             except Exception:
                 continue
 
+            if self.api_addon:  # [API TZUKU]
+                self.api_addon.feed(data)
+
             resultado = self.classifier.process_and_classify(data)
             top_class = resultado["top_class"]
             self._update_calibration(resultado["nivel_db"])
@@ -147,6 +153,9 @@ class AudioController(QThread):
 
                     # Firestore + Push en el hilo de Firebase (el micrófono sigue escuchando)
                     self.firebase_worker.enqueue(top_class, tipo="ladrido")
+
+                    if self.api_addon:  # [API TZUKU]
+                        self.api_addon.on_alarm()
 
         stream.stop_stream()
         stream.close()
