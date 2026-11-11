@@ -1,7 +1,7 @@
 # views/config_dialog.py
 from PyQt5.QtWidgets import (QDialog, QLabel, QVBoxLayout, QHBoxLayout, QFrame,
                              QPushButton, QSpinBox, QTabWidget, QWidget, QComboBox,
-                             QCheckBox, QGridLayout)
+                             QCheckBox, QGridLayout, QScrollArea, QApplication)
 from PyQt5.QtCore import Qt, pyqtSignal, QSize, QEvent
 from PyQt5.QtGui import QFont, QCursor, QIcon
 from views import theme, alert_styles
@@ -19,31 +19,40 @@ class ConfigDialog(QDialog):
         self._extra_tabs = []
         self.setWindowTitle("Configuración del Dispositivo")
         self.setModal(True)
-        self.setMinimumWidth(700)
         self._umbral_calibrado = settings.get("umbral_calibrado_db")
+        # [PANTALLA PI] Tamaño disponible de la pantalla para que el modal siempre quepa
+        self._disponible = self._area_disponible()
+        self._compacto = self._disponible.height() < 600  # p. ej. pantalla oficial 7" (800x480)
+        self.setMinimumWidth(min(700, self._disponible.width() - 20))
         self._init_ui(settings)
+        self._ajustar_a_pantalla()
 
     def _init_ui(self, settings: dict):
-        self.setStyleSheet(theme.dialog_qss())
+        self.setStyleSheet(theme.dialog_qss() + self._scroll_qss())
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(22, 18, 22, 18)
-        layout.setSpacing(10)
+        if self._compacto:
+            layout.setContentsMargins(14, 8, 14, 10)
+            layout.setSpacing(6)
+        else:
+            layout.setContentsMargins(22, 18, 22, 18)
+            layout.setSpacing(10)
 
         lbl_title = QLabel("Configuración")
         lbl_title.setObjectName("dialog_title")
-        lbl_title.setFont(theme.font(17, QFont.Bold))
+        lbl_title.setFont(theme.font(14 if self._compacto else 17, QFont.Bold))
         lbl_subtitle = QLabel("Ajusta cómo y cuándo TzukuCare envía alertas.")
         lbl_subtitle.setObjectName("muted")
         lbl_subtitle.setFont(theme.font(10))
 
+        # [PANTALLA PI] Cada pestaña va dentro de un área con scroll; los botones quedan fijos abajo.
         tabs = QTabWidget()
-        tabs.addTab(self._build_tab_ladridos(settings), "Ladridos")
-        tabs.addTab(self._build_tab_alcance(settings), "Alcance")
-        tabs.addTab(self._build_tab_alertas(settings), "Otras alertas")
+        tabs.addTab(self._con_scroll(self._build_tab_ladridos(settings)), "Ladridos")
+        tabs.addTab(self._con_scroll(self._build_tab_alcance(settings)), "Alcance")
+        tabs.addTab(self._con_scroll(self._build_tab_alertas(settings)), "Otras alertas")
         for crear in self._extra_tabs_factories:  # [API TZUKU]
             tab = crear()
-            tabs.addTab(tab, tab.titulo)
+            tabs.addTab(self._con_scroll(tab), tab.titulo)
             self._extra_tabs.append(tab)
 
         # Botones
@@ -67,10 +76,64 @@ class ConfigDialog(QDialog):
         buttons.addWidget(btn_save)
 
         layout.addWidget(lbl_title)
-        layout.addWidget(lbl_subtitle)
-        layout.addSpacing(4)
+        if self._compacto:
+            lbl_subtitle.hide()  # gana espacio vertical en pantallas bajas
+        else:
+            layout.addWidget(lbl_subtitle)
+            layout.addSpacing(4)
         layout.addWidget(tabs, 1)
         layout.addLayout(buttons)
+
+    # ---------- [PANTALLA PI] Ajuste al tamaño de la pantalla ----------
+    def _area_disponible(self):
+        pantalla = None
+        padre = self.parentWidget()
+        if padre is not None and hasattr(padre, "screen"):
+            pantalla = padre.screen()
+        if pantalla is None:
+            pantalla = QApplication.primaryScreen()
+        return pantalla.availableGeometry()
+
+    def _con_scroll(self, page: QWidget) -> QScrollArea:
+        scroll = QScrollArea()
+        scroll.setObjectName("tab_scroll")
+        scroll.setWidget(page)
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        page.setObjectName(page.objectName() or "tab_page")
+        page.setAttribute(Qt.WA_StyledBackground, True)
+        return scroll
+
+    @staticmethod
+    def _scroll_qss() -> str:
+        return f"""
+            QScrollArea#tab_scroll {{ background: transparent; border: none; }}
+            QScrollArea#tab_scroll > QWidget, QScrollArea#tab_scroll > QWidget > QWidget {{ background: transparent; }}
+            QScrollBar:vertical {{
+                background: transparent; width: 14px; margin: 2px 0 2px 4px;
+            }}
+            QScrollBar::handle:vertical {{
+                background: {theme.CELESTE}; border-radius: 5px; min-height: 36px;
+            }}
+            QScrollBar::handle:vertical:hover {{ background: {theme.TURQUESA}; }}
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{ background: none; }}
+        """
+
+    def _ajustar_a_pantalla(self):
+        """Limita el modal al área visible (dejando sitio a la barra de título) y lo centra."""
+        disp = self._disponible
+        alto_max = disp.height() - 40   # barra de título de la ventana
+        ancho_max = disp.width() - 20
+        self.setMaximumSize(ancho_max, alto_max)
+        hint = self.sizeHint()
+        ancho = max(self.minimumWidth(), min(hint.width(), ancho_max))
+        alto = min(hint.height(), alto_max)
+        self.resize(ancho, alto)
+        x = disp.x() + (disp.width() - ancho) // 2
+        y = disp.y() + max(0, (disp.height() - alto - 30) // 2)
+        self.move(x, y)
 
     def accept(self):
         for tab in self._extra_tabs:  # [API TZUKU] cada servicio guarda sus propios datos
